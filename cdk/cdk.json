@@ -1,0 +1,28 @@
+{
+  // Configuração do AWS CDK
+  // App command é executado para sintetizar o CloudFormation template
+  "app": "npx ts-node --prefer-ts-exts bin/ad-serverless.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "**/*.tsx",
+      "*.gitignore",
+      "*.github",
+      "cdk.out",
+      "cdk.context"
+    ]
+  },
+  "context": {
+    // Stack Name: nome da stack principal no CloudFormation
+    "@aws-cdk/core:stackTraceEnabled": true,
+    // NewStyleStackSynthesizer: usa o sintetizador moderno do CDK v2
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    // Integritas de segurança para buckets S3
+    "@aws-cdk/core:checkSecretUsage": false,
+    // Stack outputs como tags no CloudFormation
+    "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
+    "@aws-cdk/aws-ec2:uniqueSecurityGroupIds": true
+  }
+}
