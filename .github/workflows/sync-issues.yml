@@ -1,0 +1,179 @@
+# Sincroniza as issues do GitHub a partir dos arquivos versionados em docs/issues/*.md.
+#
+# Comportamento (idempotente, casa por título):
+#   1. Garante labels e milestones (M0..M10, na ordem).
+#   2. Cria issues novas / atualiza corpo, labels e milestone das abertas.
+#   3. Fecha como obsoletas as issues ABERTAS cujo título não corresponde a
+#      nenhum arquivo (ex.: o planejamento antigo Java+CDK), com comentário.
+#
+# Para criar/editar uma issue: edite o arquivo em docs/issues/ e faça push.
+name: Sincronizar Issues
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/issues/**'
+      - '.github/workflows/sync-issues.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sync-issues
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sincronizar milestones, labels e issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const { owner, repo } = context.repo;
+
+            // ---------- 1. Ler e parsear os arquivos de issue ----------
+            const dir = 'docs/issues';
+            const files = fs.readdirSync(dir)
+              .filter(f => f.endsWith('.md') && f.toLowerCase() !== 'readme.md')
+              .sort(); // ordem M0-01, M0-02, ... define a ordem de criação
+
+            const parsed = [];
+            for (const f of files) {
+              const raw = fs.readFileSync(path.join(dir, f), 'utf8');
+              const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+              if (!m) { core.warning(`${f}: frontmatter ausente — ignorado`); continue; }
+              const fm = m[1]; const body = m[2].trim();
+              const title = (fm.match(/^title:\s*"(.+)"\s*$/m) || [])[1];
+              const labelsRaw = (fm.match(/^labels:\s*(\[.*\])\s*$/m) || [])[1];
+              const milestone = (fm.match(/^milestone:\s*"(.+)"\s*$/m) || [])[1];
+              if (!title || !labelsRaw || !milestone) {
+                core.warning(`${f}: frontmatter incompleto (title/labels/milestone) — ignorado`);
+                continue;
+              }
+              let labels;
+              try { labels = JSON.parse(labelsRaw); }
+              catch (e) { core.warning(`${f}: labels inválidas — ignorado`); continue; }
+              const fonte = `> 📄 Fonte versionada: [\`docs/issues/${f}\`](https://github.com/${owner}/${repo}/blob/main/docs/issues/${f}) — edite o arquivo e faça push para atualizar esta issue.\n\n`;
+              parsed.push({ file: f, title, labels, milestone, body: fonte + body });
+            }
+            core.info(`Arquivos de issue válidos: ${parsed.length}`);
+
+            // ---------- 2. Garantir milestones (ordenados por número Mx) ----------
+            const wanted = [...new Set(parsed.map(p => p.milestone))]
+              .sort((a, b) => parseInt(a.match(/^M(\d+)/)[1]) - parseInt(b.match(/^M(\d+)/)[1]));
+            const existingMs = await github.paginate(github.rest.issues.listMilestones, {
+              owner, repo, state: 'all', per_page: 100,
+            });
+            const msNumber = {};
+            for (const title of wanted) {
+              let ms = existingMs.find(x => x.title === title);
+              if (!ms) {
+                ms = (await github.rest.issues.createMilestone({ owner, repo, title })).data;
+                core.info(`Milestone criado: ${title}`);
+              } else if (ms.state === 'closed') {
+                await github.rest.issues.updateMilestone({ owner, repo, milestone_number: ms.number, state: 'open' });
+              }
+              msNumber[title] = ms.number;
+            }
+
+            // ---------- 3. Garantir labels ----------
+            const colorFor = (l) =>
+              l.startsWith('epic:') ? '1d76db' :
+              l.startsWith('tipo:seguranca') ? 'b60205' :
+              l.startsWith('tipo:') ? '0e8a16' :
+              l === 'prioridade:P0' ? 'b60205' :
+              l === 'prioridade:P1' ? 'd93f0b' :
+              l === 'prioridade:P2' ? 'fbca04' :
+              l === 'prioridade:P3' ? 'c2e0c6' :
+              l === 'obsoleta' ? 'cccccc' :
+              l === 'melhoria' ? '5319e7' : 'ededed';
+            const wantedLabels = [...new Set([...parsed.flatMap(p => p.labels), 'obsoleta'])];
+            const existingLabels = (await github.paginate(github.rest.issues.listLabelsForRepo, {
+              owner, repo, per_page: 100,
+            })).map(l => l.name);
+            for (const l of wantedLabels) {
+              if (!existingLabels.includes(l)) {
+                await github.rest.issues.createLabel({ owner, repo, name: l, color: colorFor(l) });
+                core.info(`Label criada: ${l}`);
+              }
+            }
+
+            // ---------- 4. Criar/atualizar issues ----------
+            const all = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'all', per_page: 100,
+            });
+            const issuesOnly = all.filter(i => !i.pull_request);
+            const byTitle = new Map(issuesOnly.map(i => [i.title, i]));
+
+            let created = 0, updated = 0;
+            for (const p of parsed) {
+              const found = byTitle.get(p.title);
+              if (!found) {
+                await github.rest.issues.create({
+                  owner, repo, title: p.title, body: p.body,
+                  labels: p.labels, milestone: msNumber[p.milestone],
+                });
+                created++;
+              } else if (found.state === 'open') {
+                await github.rest.issues.update({
+                  owner, repo, issue_number: found.number, body: p.body,
+                  labels: p.labels, milestone: msNumber[p.milestone],
+                });
+                updated++;
+              } // fechadas = concluídas: não reabrir nem alterar
+            }
+            core.info(`Issues criadas: ${created}, atualizadas: ${updated}`);
+
+            // ---------- 5. Fechar issues abertas que não constam nos arquivos ----------
+            const validTitles = new Set(parsed.map(p => p.title));
+            let closed = 0;
+            for (const i of issuesOnly) {
+              if (i.state !== 'open' || validTitles.has(i.title)) continue;
+              if (i.labels.some(l => (l.name || l) === 'manual')) continue; // escape hatch
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: i.number,
+                body: 'Issue fechada automaticamente: substituída pelo replanejamento **Go + Serverless Framework** ' +
+                      '(o planejamento anterior Java + CDK foi descontinuado). ' +
+                      'O novo backlog completo está em [`docs/issues/`](https://github.com/' + owner + '/' + repo + '/tree/main/docs/issues) ' +
+                      'e nas [issues abertas](https://github.com/' + owner + '/' + repo + '/issues).',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: i.number,
+                labels: [...new Set([...i.labels.map(l => l.name || l), 'obsoleta'])],
+                state: 'closed', state_reason: 'not_planned',
+              });
+              closed++;
+            }
+            core.info(`Issues obsoletas fechadas: ${closed}`);
+
+            // ---------- 6. Fechar milestones antigos que ficaram sem issues abertas ----------
+            const allMs = await github.paginate(github.rest.issues.listMilestones, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            let closedMs = 0;
+            for (const ms of allMs) {
+              if (wanted.includes(ms.title)) continue;           // milestones do plano atual
+              if (ms.open_issues > 0) continue;                  // ainda tem issue aberta
+              await github.rest.issues.updateMilestone({
+                owner, repo, milestone_number: ms.number, state: 'closed',
+              });
+              closedMs++;
+            }
+            core.info(`Milestones obsoletos fechados: ${closedMs}`);
+            core.summary
+              .addHeading('Sincronização de Issues')
+              .addTable([
+                [{data: 'Métrica', header: true}, {data: 'Valor', header: true}],
+                ['Arquivos válidos', String(parsed.length)],
+                ['Criadas', String(created)],
+                ['Atualizadas', String(updated)],
+                ['Obsoletas fechadas', String(closed)],
+              ]).write();

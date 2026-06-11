@@ -1,0 +1,26 @@
+# Binários e artefatos de build Go
+bin/
+dist/
+*.test
+coverage.out
+
+# Serverless Framework
+.serverless/
+node_modules/
+
+# Ambiente local
+.env
+.env.*
+*.local
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# SO
+.DS_Store
+Thumbs.db
+
+# Fixtures temporárias (as oficiais ficam em tests/golden/)
+tmp/
