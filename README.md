@@ -1,90 +1,67 @@
 # Ad-Serverless
 
-> Migração completa do ad-server Java Spring Boot (desde 2015) + ad-commons para arquitetura serverless em microserviços AWS Lambda.
+> Migração completa do [ad-server](https://github.com/InteliFi/ad-server) (Java/Spring Boot, desde 2015) + [ad-commons](https://github.com/InteliFi/ad-commons) para **microserviços Go em AWS Lambda** com **Serverless Framework** — unificados neste repositório.
 
 ## 📊 Visão Geral
 
 | Métrica | Valor |
 |---------|-------|
-| Volume atual | 2M+ requisições/dia |
-| Stack atual | Java 17, Spring Boot 3.4.x, MySQL + HikariCP |
-| Deploy atual | Scripts shell manuais → EC2 (Dev: us-east-1, Prod: sa-east-1 × 2) |
-| Repositórios origem | [ad-server](https://github.com/InteliFi/ad-server) (~60 classes), [ad-commons](https://github.com/InteliFi/ad-commons) (~37 classes) |
+| Volume atual | 2M+ requisições/dia (tracking timestampado de publicidade) |
+| Stack origem | Java 17, Spring Boot 3.4.x, MySQL + DynamoDB, deploy manual em EC2 |
+| Stack alvo | **Go 1.24+ · AWS Lambda (arm64) · Serverless Framework · API Gateway HTTP API · SQS · S3+CloudFront** |
+| Metas | Alta disponibilidade, escala automática, p99 < 150ms, custo ~US$200–350/mês |
 
-## 🎯 Objetivo
+## 🎯 Princípios da migração
 
-Migrar o ad-server e ad-commons para uma arquitetura serverless em microserviços na AWS Lambda, unificados neste repositório `ad-serverless`.
+1. **Paridade total de features** — nenhum comportamento do sistema atual se perde. Rastreado linha a linha na [Matriz de Paridade](docs/MATRIZ-PARIDADE.md).
+2. **Banco de dados por último, com cuidado** — o MySQL é compartilhado com outros projetos; a fase 1 usa o schema existente sem nenhuma alteração (via RDS Proxy). Mudanças de banco são o Epic final (M10), coordenado.
+3. **Código 100% documentado em português** — [política obrigatória](CODE_DOCS_POLICY.md), verificada em lint e code review.
+4. **Desenvolvimento com IA** — cada issue é autossuficiente e executada via Claude Code ([guia](CLAUDE.md)).
 
-### Novas Features Planejadas
-- **CPA Tracking** (Cost Per Acquisition) — tracking completo de conversões com attribution window
-- **CPL Tracking** (Cost Per Lead) — recebimento, deduplicação e métricas de leads
-- **Analytics Avançado** — dashboards com tendências, comparação A/B, export multi-formato
-- **Real-time Streaming** — Kinesis Firehose → OpenSearch para dashboards em tempo real
+## 📚 Documentação
 
-## 🏗️ Stack Tecnológica Alvo
+| Documento | Conteúdo |
+|---|---|
+| [docs/PLANO-MIGRACAO.md](docs/PLANO-MIGRACAO.md) | Plano mestre: epics, sequência, riscos, cutover |
+| [docs/arquitetura/ARQUITETURA-ALVO.md](docs/arquitetura/ARQUITETURA-ALVO.md) | Stack, diagrama, 9 Lambdas, ADRs |
+| [docs/MATRIZ-PARIDADE.md](docs/MATRIZ-PARIDADE.md) | Cada feature legada → serviço Go → status |
+| [docs/legado/01-endpoints-http.md](docs/legado/01-endpoints-http.md) | Spec dos 16 endpoints HTTP |
+| [docs/legado/02-logica-negocio.md](docs/legado/02-logica-negocio.md) | Algoritmos de negócio (seleção, frequency cap, tracking) |
+| [docs/legado/03-pipeline-vast.md](docs/legado/03-pipeline-vast.md) | Pipeline VAST completo (o componente mais crítico) |
+| [docs/legado/04-modelo-dados.md](docs/legado/04-modelo-dados.md) | Schema MySQL (30 migrations) + tabelas DynamoDB |
+| [docs/legado/05-config-infra-deploy.md](docs/legado/05-config-infra-deploy.md) | Configuração operacional e deploy atual |
+| [docs/issues/](docs/issues/) | Fonte versionada de todas as issues (sincronizadas via Actions) |
 
-| Decisão | Escolha | Justificativa |
-|---------|---------|---------------|
-| Linguagem | Java 21 + Spring Boot 3.4.x | SnapStart elimina cold start, virtual threads para proxy I/O |
-| IaC | AWS CDK v2.x (TypeScript) | Type safety, constructs reutilizáveis |
-| API Gateway | HTTP API + Response Caching | 3x menos latência, 50% mais barato que REST API |
-| DB Hot Path | DynamoDB on-demand → provisioned + auto-scale | Write-heavy, sem gestão de conexão |
-| DB Analytics | Aurora Serverless v2 (PostgreSQL) via RDS Proxy | SQL completo para relatórios e JOINs complexos |
-| Cache | Caffeine (local) + API Gateway Cache | Sub-ms hit rate, elimina 60-80% invocações Lambda |
-| Async Tracking | SQS Standard → Lambda consumer → DynamoDB BatchWrite | Fire-and-forget confiável com DLQ |
-| Cold Start | SnapStart + Provisioned Concurrency (min=10 em vast-handler) | <50ms sempre |
-| Observability | ADOT Lambda Layer → X-Ray + CloudWatch custom metrics | Auto-instrumentação, tracing end-to-end |
+## 🏗️ Microserviços
 
-## 💰 Custo Estimado Mensal: ~$900-1.100/mês otimizado
+| Lambda | Rotas | Epic |
+|---|---|---|
+| `ad-handler` | `GET /ad`, `GET /GAM`, health | M4 |
+| `vast-handler` | `GET /vast` (3 fluxos + rewrite + partner rules) | M5 |
+| `track-handler` | `POST /adtrack`, `GET /vasttrack`, `GET /trackingpixel` | M3 |
+| `redirect-handler` | `GET /redirect` | M3 |
+| `postback-handler` | `GET /adtrack/postback` (modatta, prezão) | M3 |
+| `proxy-handler` | `/proxy-tracker`, `/proxy-audit`, `/safeframe/proxy-safeframe` | M5 |
+| `media-handler` | `GET /media/{filename}` (S3 + CloudFront) | M5 |
+| `report-handler` | `GET /adtrack`, `GET /adtrack/xls` | M6 |
+| `tracker-writer` | consumidor SQS → MySQL + DynamoDB | M3 |
 
-## 📁 Estrutura do Repositório (planejada)
+## 📋 Planejamento e tracking
 
-```
-ad-serverless/
-├── cdk/                    # AWS CDK TypeScript - Infraestrutura
-│   ├── lib/
-│   │   ├── vast-handler.construct.ts
-│   │   ├── tracking-handler.construct.ts
-│   │   ├── database.construct.ts
-│   │   └── ...
-├── services/               # Microserviços Java (Maven multi-module)
-│   ├── commons/            # ad-commons migrado e modernizado
-│   ├── vast-handler/       # Lambda: VAST XML generation + proxy
-│   ├── ad-handler/         # Lambda: Banner/script serving
-│   ├── tracking-pixel-handler/  # Lambda: Tracking pixel + events
-│   ├── redirect-handler/   # Lambda: Click redirect com GA
-│   ├── postback-handler/   # Lambda: CPA/CPL postbacks
-│   ├── tracker-writer/     # Lambda: SQS consumer → DynamoDB batch write
-│   └── analytics-service/  # Serviço de relatórios e métricas
-├── migrations/             # Flyway + AWS DMS scripts
-├── docs/                   # Documentação completa (ADRs, OpenAPI, runbooks)
-└── .github/workflows/      # CI/CD GitHub Actions
-```
+O roadmap completo são **11 milestones (M0–M10)** com issues extremamente detalhadas:
 
-## 📋 Planejamento de Migração
+👉 **[Issues abertas](https://github.com/InteliFi/ad-serverless/issues)** · **[Milestones](https://github.com/InteliFi/ad-serverless/milestones)**
 
-O planejamento completo está dividido em **6 Epics** com ~40 issues detalhados:
+As issues são geradas a partir de [docs/issues/](docs/issues/) pelo workflow [sync-issues](.github/workflows/sync-issues.yml) — editar/criar issues = editar os arquivos e fazer push.
 
-| Epic | Issues | Foco |
-|------|--------|------|
-| [Epic 1: Infraestrutura AWS](https://github.com/InteliFi/ad-serverless/milestone/1) | 8 | CDK, CI/CD GitHub Actions, DynamoDB, Aurora, ElastiCache, SQS, CloudFront+WAF |
-| [Epic 2: Core Microservices](https://github.com/InteliFi/ad-serverless/milestone/2) | 16 | Maven multi-module, 8 Lambdas (vast, ad, tracking-pixel, redirect, postback, tracker-writer, proxy-audit, proxy-tracker), templates, SnapStart |
-| [Epic 3: Database Migration](https://github.com/InteliFi/ad-serverless/milestone/3) | 4 | Flyway → PostgreSQL, DMS MySQL→DynamoDB+Aurora, frequency cap conditional writes, backup+DR |
-| [Epic 4: Novas Features](https://github.com/InteliFi/ad-serverless/milestone/4) | 6 | CPA tracking, CPL leads, analytics dashboard, Kinesis Firehose real-time, circuit breaker + retry |
-| [Epic 5: Observability](https://github.com/InteliFi/ad-serverless/milestone/5) | 3 | CloudWatch dashboards+alarms, Micrometer custom metrics, structured JSON logging |
-| [Epic 6: Documentação & Qualidade](https://github.com/InteliFi/ad-serverless/milestone/6) | 8 | JavaDoc em português, CLAUDE.md, OpenAPI/Swagger, ADRs, testes JUnit5+k6, security review, deploy strategy |
+## 🔴 Pontos críticos conhecidos
 
-### Todos os Issues
-👉 [Ver todos os issues abertos](https://github.com/InteliFi/ad-serverless/issues)
-
-## 🔴 Pontos Críticos Identificados
-
-1. **VastService tem 1279 linhas** — monólito que deve ser dividido em 3-4 serviços menores
-2. **ad_trackers com ~14M rows** — precisa de estratégia de partição por data no DynamoDB
-3. **AWS credentials hardcoded** no application.properties (AKIAVR67P7UR7PR2J6QC) — CRÍTICO remover e rotacionar chaves expostas
-4. **Template engine é substituição simples `${key}`** — não usa Velocity real, facilita migração
-5. **Video cache stateful** em `/tmp/adserver_video_cache` — precisa de S3 ou EFS no Lambda
+1. **Credenciais AWS expostas** no repositório Java legado — rotação imediata é a issue P0.
+2. **VastService com 1279 linhas** — dividido em módulos Go (fetch, rewrite, partner-rules, video-cache) com golden tests por parceiro.
+3. **`ad_trackers` com ~14M linhas** write-heavy — escrita via SQS + batch, leitura de relatório com agregação no banco.
+4. **MySQL compartilhado** — RDS Proxy + máx 2 conexões por container para nunca afetar os outros projetos.
+5. **Cache de vídeo local** (`/tmp`) — substituído por S3 + CloudFront.
 
 ## 📄 Licença
 
-Proprietário — InteliFi/INTV Brasil
+Proprietário — InteliFi / INTV Brasil
