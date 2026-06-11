@@ -153,6 +153,21 @@ jobs:
               closed++;
             }
             core.info(`Issues obsoletas fechadas: ${closed}`);
+
+            // ---------- 6. Fechar milestones antigos que ficaram sem issues abertas ----------
+            const allMs = await github.paginate(github.rest.issues.listMilestones, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            let closedMs = 0;
+            for (const ms of allMs) {
+              if (wanted.includes(ms.title)) continue;           // milestones do plano atual
+              if (ms.open_issues > 0) continue;                  // ainda tem issue aberta
+              await github.rest.issues.updateMilestone({
+                owner, repo, milestone_number: ms.number, state: 'closed',
+              });
+              closedMs++;
+            }
+            core.info(`Milestones obsoletos fechados: ${closedMs}`);
             core.summary
               .addHeading('Sincronização de Issues')
               .addTable([

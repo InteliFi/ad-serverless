@@ -14,7 +14,7 @@ milestone: "M0 — Fundação"
 (corpo da issue em markdown)
 ```
 
-## Inventário completo (60 issues, 11 milestones)
+## Inventário completo (69 issues, 12 milestones)
 
 ### M0 — Fundação (6)
 | ID | Título | Depende de |
@@ -38,7 +38,7 @@ milestone: "M0 — Fundação"
 | M1-07 | internal/middleware: CORS + RequestValidation + recover | M0-01 |
 | M1-08 | internal/httpx + platform: HTTP client, IP/geo, config SSM, slog | M0-01 |
 
-### M2 — Infra AWS (6)
+### M2 — Infra AWS (7)
 | ID | Título | Depende de |
 |---|---|---|
 | M2-01 | SQS tracking-queue + DLQ | M0-02 |
@@ -47,6 +47,7 @@ milestone: "M0 — Fundação"
 | M2-04 | IAM roles por função (least privilege) | M0-02 |
 | M2-05 | API Gateway HTTP API: rotas, CORS, catch-all, error responses | M0-02 |
 | M2-06 | WAF + rate limiting no CloudFront | M2-02 |
+| M2-07 | Backup & disaster recovery (PITR, versioning, plano de DR) | M2-01, M2-02 |
 
 ### M3 — Tracking (7)
 | ID | Título | Depende de |
@@ -120,9 +121,25 @@ milestone: "M0 — Fundação"
 | M10-03 | CI/CD de migrations + staging de banco | M10-02 |
 | M10-04 | Migração coordenada sem downtime | M10-03 |
 
+### M11 — Backlog Pós-Cutover (8) — melhorias e novas features, NUNCA antes do M9
+> Ideias aproveitadas do planejamento anterior (Qwen3.6) que valiam ser mantidas, adaptadas à arquitetura Go e às diretrizes do projeto.
+
+| ID | Título | Origem |
+|---|---|---|
+| M11-01 | CPA Tracking — conversões com attribution window | issue antiga #31 |
+| M11-02 | CPL Tracking — leads com deduplicação e webhooks | issue antiga #32 |
+| M11-03 | Analytics avançado — dashboards de negócio e exports | issues antigas #33, #37 |
+| M11-04 | Real-time streaming — Kinesis Firehose → S3 + OpenSearch | issue antiga #34 |
+| M11-05 | Circuit breaker + fallbacks para upstreams de parceiros | issue antiga #35 |
+| M11-06 | Event-count frequency cap com DynamoDB conditional writes | issue antiga #29 |
+| M11-07 | Deploy gradual contínuo — aliases/CodeDeploy + feature flags | issue antiga #47 |
+| M11-08 | Avaliação de cache compartilhado (DAX/ElastiCache) + cache VAST | issues antigas #7, #26 |
+
+Ideias do planejamento anterior **rejeitadas conscientemente** (e por quê): migração imediata de campaigns/creatives/hotspots para DynamoDB e Flyway→PostgreSQL (#5, #6, #12, #27, #28 — violam a diretriz do banco compartilhado; viram opções do ADR em M10-02); cookie dedup em DynamoDB (#17 — o cookie é client-side e funciona em Lambda); novo esquema de chaves no tracking (#19 — quebraria as tabelas DynamoDB compartilhadas com o legado durante a transição); SnapStart/provisioned concurrency Java (#24 — não se aplica a Go).
+
 ## Labels padronizadas
 
-- `epic:M0-fundacao` … `epic:M10-banco`
+- `epic:M0-fundacao` … `epic:M10-banco` · `epic:M11-backlog`
 - `tipo:infra` · `tipo:port` (paridade) · `tipo:feature` · `tipo:seguranca` · `tipo:teste` · `tipo:docs` · `tipo:decisao`
 - `prioridade:P0` (bloqueante/segurança) · `P1` (caminho crítico) · `P2` (normal) · `P3` (pós-cutover)
 - `melhoria` — mudanças além da paridade (NUNCA misturar com `tipo:port`)

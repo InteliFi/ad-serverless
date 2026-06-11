@@ -66,4 +66,4 @@ Cada issue é autossuficiente: contém contexto, referências às specs (`docs/l
 
 ## Novas features (pós-paridade — backlog)
 
-Mantidas do planejamento original, executam **somente após M9**: CPA tracking completo com attribution window, CPL com deduplicação, analytics avançado, streaming real-time (Kinesis→OpenSearch). Registradas como issues `melhoria` sem milestone.
+Registradas no milestone **M11 — Backlog Pós-Cutover** (8 issues), executam **somente após M9**: CPA tracking com attribution window, CPL com deduplicação e webhooks, analytics avançado, streaming real-time (Kinesis→OpenSearch), circuit breaker por parceiro, event-count frequency cap (implementa as colunas `event_cap*` que o legado nunca usou), deploy gradual contínuo com feature flags e avaliação de cache compartilhado. Ver [docs/issues/README.md](issues/README.md) §M11 — inclui o registro das ideias do planejamento anterior aproveitadas e das rejeitadas (com justificativa).

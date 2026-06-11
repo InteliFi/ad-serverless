@@ -27,6 +27,8 @@ Implementar emissor EMF próprio (struct serializada para stdout junto ao slog) 
 | `UpstreamLatency` | Milliseconds | Service, UpstreamHost | vast fetch, proxy-tracker, proxy-audit, postback, GAM, pixel download |
 | `UpstreamError` | Count | Service, UpstreamHost | idem (status >= 400, timeout, erro de rede) |
 | `VastFlow` | Count | Service, Flow (A/B/C) | vast-handler |
+| `VastFill` / `VastNoFill` | Count | Service | vast-handler — fill rate = Fill/(Fill+NoFill): % de /vast que devolve anúncio válido vs. 404/vazio (ideia aproveitada da issue antiga #38) |
+| `FrequencyCapBlocked` | Count | Service | internal/selection — campanha filtrada por frequency cap (visibilidade de pacing; issue antiga #38) |
 | `CacheHit` / `CacheMiss` | Count | Service, CacheName (hotspots/override/template) | internal/cache |
 | `PostbackUpstreamSent` / `PostbackUpstreamFailed` | Count | Service, Source (modatta/prezao_claro) | postback-handler |
 
