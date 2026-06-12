@@ -4,7 +4,7 @@ labels: ["epic:M0-fundacao", "tipo:infra", "prioridade:P1"]
 milestone: "M0 — Fundação"
 ---
 > 📌 **Status (2026-06-12):** Templates + CODEOWNERS + runbook escritos.
-> Branch protection pendente execução humana (`gh api` — ver PR #TBD, Closes #54).
+> Branch protection pendente execução humana (`gh api` — ver PR #123, Closes #54).
 
 ## Contexto
 
