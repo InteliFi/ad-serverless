@@ -3,6 +3,11 @@ title: "[M0-05] 🔴 Segurança: rotação das chaves AWS expostas + SSM bootstr
 labels: ["epic:M0-fundacao", "tipo:infra", "tipo:seguranca", "prioridade:P0"]
 milestone: "M0 — Fundação"
 ---
+> 📌 **Status (2026-06-12):** Runbook escrito em
+> [docs/runbooks/rotacao-chaves.md](../runbooks/rotacao-chaves.md). Todas as 5
+> fases são execução humana com credenciais AWS — pendentes. PR #122 aberto
+> (Closes #53).
+
 ## Contexto
 
 🔴 **A access key AWS `AKIAVR67P7UR7PR2J6QC` está em texto plano no `application.properties` do ad-server Java — e a MESMA chave é usada em dev E prod.** Junto dela estão hardcoded as senhas do MySQL (root em dev; `adserver_dml`/`adserver_ddl` em prod) e a `intv.ad.signaturekey`. Ver [docs/legado/05-config-infra-deploy.md](../legado/05-config-infra-deploy.md) §2 ("SEGREDOS HARDCODED") e [ARQUITETURA-ALVO.md](../arquitetura/ARQUITETURA-ALVO.md) §7.1 ("Rotacionar IMEDIATAMENTE").
