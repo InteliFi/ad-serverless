@@ -1,0 +1,54 @@
+# serverless.yml — espinha dorsal de TODA a infraestrutura do ad-serverless.
+# As 9 Lambdas da migração (ARQUITETURA-ALVO §3) e os recursos do M2 (SQS,
+# S3/CloudFront, RDS Proxy, IAM) serão adicionados a este arquivo.
+#
+# Versão do framework: v3 OSS pinada — decisão registrada em
+# docs/arquitetura/ADR-008-serverless-framework-versao.md (a v4 exige licença
+# paga acima de US$ 2M de receita/ano; a v3 é MIT e cobre tudo que usamos).
+service: ad-serverless
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  # Runtime "custom" da AWS: o binário Go é o próprio executável `bootstrap`
+  # dentro do zip (compilado pelo Makefile com GOOS=linux GOARCH=arm64).
+  runtime: provided.al2023
+  architecture: arm64
+  # A região é função do stage (custom.regions) — espelha o legado
+  # (docs/legado/05-config-infra-deploy.md §1): o MySQL de cada ambiente
+  # mora nessas regiões e a latência Lambda↔RDS precisa ser mínima.
+  # Stage fora de dev/prod NÃO resolve região e quebra o deploy — proposital.
+  region: ${self:custom.regions.${sls:stage}}
+  stage: ${opt:stage, 'dev'}
+  # Defaults conservadores por função (cada Lambda do M2+ ajusta o seu —
+  # tabela de memória/timeout em ARQUITETURA-ALVO §3).
+  memorySize: 256
+  timeout: 10
+  httpApi:
+    payload: '2.0'          # payload v2.0 — contrato dos handlers Go (ADR-001)
+  environment:
+    STAGE: ${sls:stage}
+  stackTags:
+    projeto: ad-serverless
+    stage: ${sls:stage}
+
+custom:
+  regions:
+    dev: us-east-1          # mesmo do legado (EC2 dev + dev-mysql)
+    prod: sa-east-1         # mesmo do legado (EC2 prod + prod-mysql + DynamoDB)
+
+package:
+  individually: true        # 1 zip por função — deploy independente, zip mínimo
+
+functions:
+  # PROVISÓRIO: removido na issue do ad-handler (M4-03). Existe apenas para
+  # validar a fundação do deploy (M0-02): runtime/arquitetura, payload v2.0
+  # e o empacotamento bootstrap+zip do Makefile.
+  hello:
+    handler: bootstrap
+    package:
+      artifact: bin/hello/hello.zip
+    events:
+      - httpApi:
+          method: GET
+          path: /hello

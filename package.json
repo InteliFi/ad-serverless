@@ -1,0 +1,8 @@
+{
+  "name": "ad-serverless",
+  "private": true,
+  "description": "Tooling de deploy do ad-serverless — Serverless Framework v3 OSS pinado (ver docs/arquitetura/ADR-008-serverless-framework-versao.md). Usar sempre via npx serverless.",
+  "devDependencies": {
+    "serverless": "~3.40.0"
+  }
+}
