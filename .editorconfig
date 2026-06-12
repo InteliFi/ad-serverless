@@ -1,0 +1,21 @@
+# Configuração de editor compartilhada (https://editorconfig.org).
+# Garante fim de linha LF e indentação consistente em qualquer IDE,
+# inclusive em Windows (evita diffs de CRLF no repositório).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+# Go usa tabs por convenção da linguagem (gofmt).
+[*.go]
+indent_style = tab
+
+# Receitas de Makefile EXIGEM tab — espaços quebram o make.
+[Makefile]
+indent_style = tab
+
+[*.{yml,yaml,json,md}]
+indent_style = space
+indent_size = 2
