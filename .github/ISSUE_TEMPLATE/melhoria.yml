@@ -1,0 +1,52 @@
+# Template de melhoria — ad-serverless
+# Use para propor mudanças que VÃO ALÉM da paridade com o Java legado.
+
+name: "✨ Melhoria"
+description: Mudança que vai além da paridade com o sistema Java legado
+title: ["melhoria: "]
+labels: ["melhoria"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Melhorias são mudanças que **não** existem no Java — otimizações, refatorações,
+        novas features. Elas precisam de uma issue separada da portagem (regra inegociável).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrição da melhoria
+      description: O que você quer mudar e por quê?
+      placeholder: "Ex: substituir o template engine de ${key} pelo text/template do Go para segurança"
+    validations:
+      required: true
+
+  - type: textarea
+    id: justification
+    attributes:
+      label: Justificativa
+      description: |
+        Por que a mudança é necessária? Qual problema resolve ou qual ganho traz?
+        Se for performance, inclua dados (benchmark, tempo de cold start).
+      placeholder: "O template atual não escapa HTML → risco XSS em rewrite de JS..."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: not-parity
+    attributes:
+      label: Confirmação
+      description: Esta issue é uma melhoria genuína?
+      options:
+        - label: "Não é portagem de paridade — a funcionalidade já existe no Java e não está sendo replicada aqui"
+          required: true
+        - label: "Não mistura mudança de schema MySQL (regra inegociável — Epic M10)"
+          required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impacto esperado
+      description: O que muda para quem consome as Lambdas? Há breaking change?
+      placeholder: "Nenhuma breaking change na interface HTTP; apenas performance interna..."

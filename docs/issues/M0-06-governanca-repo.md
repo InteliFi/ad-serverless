@@ -3,6 +3,9 @@ title: "[M0-06] Governança: templates de PR/issue, branch protection, CODEOWNER
 labels: ["epic:M0-fundacao", "tipo:infra", "prioridade:P1"]
 milestone: "M0 — Fundação"
 ---
+> 📌 **Status (2026-06-12):** Templates + CODEOWNERS + runbook escritos.
+> Branch protection pendente execução humana (`gh api` — ver PR #123, Closes #54).
+
 ## Contexto
 
 Todo o desenvolvimento será feito por IA (Claude Code) com revisão humana, no fluxo "1 issue = 1 branch = 1 PR" ([docs/PLANO-MIGRACAO.md](../PLANO-MIGRACAO.md) §Regras de execução e [CLAUDE.md](../../CLAUDE.md) §Fluxo de trabalho). Para que a revisão humana seja eficaz e nenhuma regra inegociável passe batida (paridade, matriz, golden tests, português, referência ao Java de origem), o repositório precisa de guard-rails: template de PR com checklist, templates de issue, CODEOWNERS e branch protection no `main`.
