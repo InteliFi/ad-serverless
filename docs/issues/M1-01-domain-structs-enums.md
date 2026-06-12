@@ -3,6 +3,11 @@ title: "[M1-01] internal/domain: structs e enums do domínio"
 labels: ["epic:M1-commons", "tipo:port", "prioridade:P1"]
 milestone: "M1 — Commons Go"
 ---
+
+> 📌 **Status (2026-06-12):** Implementado — 7 structs + 4 enums com testes.
+> PR #TBD aberto (Closes #55). Nota: CreativeType tem 45 valores no Java
+> (a spec dizia 46, mas a fonte real é o enum CreativeType.Values).
+
 ## Contexto
 
 O ad-commons (Java v1.4.4) define as entities JPA que modelam o domínio do ad server: campanhas, creatives, hotspots e eventos de tracking. TODA a lógica dos demais pacotes (`frequencycap`, `selection`, `templates`, `tracking`, repositórios) depende dessas structs. Esta issue porta o modelo de dados para `internal/domain` em Go, **sem nenhuma mudança de schema** (o MySQL é compartilhado — ver ADR-006). Cada campo deve citar a coluna de origem em comentário, conforme [CODE_DOCS_POLICY.md](../../CODE_DOCS_POLICY.md) §5.
