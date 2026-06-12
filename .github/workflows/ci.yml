@@ -1,0 +1,62 @@
+# CI do ad-serverless — integração contínua (lint → test → build).
+#
+# Roda em todo pull request e em push na main. NÃO faz deploy: a entrega é
+# via CodeBuild/CodePipeline dentro da AWS (decisão registrada em
+# docs/arquitetura/ADR-009-deploy-codepipeline-ssm.md) — por isso este
+# workflow não precisa (e não deve ter) NENHUMA credencial AWS.
+# Proibido criar secrets AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY no repo.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Permissão mínima: apenas leitura do conteúdo do repositório.
+permissions:
+  contents: read
+
+jobs:
+  # Lint completo com golangci-lint pinado na MESMA versão usada localmente
+  # (v1.64.8 — o .golangci.yml é do formato v1; a série v2 é incompatível,
+  # ver comentário no próprio .golangci.yml).
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+
+  # Testes com cobertura: o total é impresso no log do job e o coverage.out
+  # é publicado como artefato para inspeção posterior.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Testes com cobertura
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+      - name: Cobertura total no log
+        run: go tool cover -func=coverage.out | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  # Compila TODOS os binários das Lambdas (cmd/*) exatamente como o deploy
+  # real fará: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 -tags lambda.norpc,
+  # binário bootstrap + zip por serviço (ver Makefile).
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: make build
