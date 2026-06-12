@@ -1,0 +1,83 @@
+# Template de bug — ad-serverless
+# Use para reportar comportamento incorreto nas Lambdas ou no pipeline.
+
+name: "🐛 Bug"
+description: Comportamento incorreto em uma Lambda, handler ou pipeline
+title: ["bug: "]
+labels: ["tipo:bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar! Descreva o bug com o máximo de contexto possível.
+        Compare com a especificação do legado em `docs/legado/*` quando relevante.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Resumo do bug
+      description: O que aconteceu e o que era esperado?
+      placeholder: |
+        Ao chamar GET /vast?creative_id=123, a Lambda retorna 500 com erro de template.
+        Esperado: VAST XML válido (paridade com VastService.java#rewriteVast).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: lambda
+    attributes:
+      label: Lambda/handler afetado
+      description: Qual componente está com o bug?
+      options:
+        - hello (provisório)
+        - vast
+        - ad-script
+        - postback
+        - tracking-pixel
+        - proxy-audit
+        - pipeline / infra
+        - outro (descrever em detalhes)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Ambiente
+      description: Onde o bug ocorreu?
+      options:
+        - dev (us-east-1)
+        - prod (sa-east-1)
+        - local (make test)
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+      description: |
+        O que deveria acontecer? Link para a especificação do legado ajuda muito.
+        Ex: "docs/legado/01-endpoints-http.md §3 — VAST retorna 200 com XML"
+      placeholder: "Link para docs/legado/* ou comportamento observado no Java"
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: Comportamento observado
+      description: O que acontece na prática? Inclua logs, erro, status code.
+      placeholder: "Logs da Lambda, stack trace, resposta HTTP..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Como reproduzir
+      description: Request de reprodução (curl) ou passos para acionar o bug.
+      render: shell
+      placeholder: |
+        curl -v "https://<api-id>.execute-api.us-east-1.amazonaws.com/dev/vast?creative_id=123"

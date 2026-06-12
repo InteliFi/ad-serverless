@@ -1,0 +1,11 @@
+# Configuração de templates de issue — ad-serverless
+# Issues planejadas nascem dos arquivos versionados em docs/issues/, não manualmente.
+# Se a issue que você precisa não existe, abra um PR adicionando o arquivo em docs/issues/
+# e o sync-issues (CI) cria a issue no GitHub automaticamente.
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: Issues planejadas do repositório
+    about: "Issues versionadas em docs/issues/ — edite o arquivo e faça push para atualizar."
+    url: https://github.com/InteliFi/ad-serverless/blob/main/docs/issues/README.md

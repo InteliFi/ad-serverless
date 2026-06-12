@@ -1,0 +1,12 @@
+# CODEOWNERS — ad-serverless
+# Revisão humana obrigatória em tudo (desenvolvimento é feito por IA com Claude Code).
+# Os owners são notificados automaticamente ao abrir PR e precisam aprovar.
+
+# Fabio (engenheiro responsável pelo projeto) revisa tudo
+*               @fabiomagnoni
+
+# Mudanças sensíveis de infraestrutura exigem revisão extra do engenheiro-chefe
+/serverless.yml @fabiomagnoni
+/migrations/    @fabiomagnoni
+/docs/legado/   @fabiomagnoni
+/infra/         @fabiomagnoni
