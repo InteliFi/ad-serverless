@@ -1,0 +1,38 @@
+# Configuração do golangci-lint — formato da série v1.x.
+# Versão testada: golangci-lint v1.64.8 (última release da série v1).
+# ATENÇÃO: a série v2 do golangci-lint mudou o formato deste arquivo e
+# NÃO é compatível — manter a v1.64.x até uma issue de migração dedicada.
+#
+# A regra revive/exported (severity: error) força a política de documentação
+# do repositório: todo identificador exportado precisa de doc comment em
+# português (ver CODE_DOCS_POLICY.md).
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - revive
+    - ineffassign
+    - misspell
+    - gofmt
+    - goimports
+
+linters-settings:
+  revive:
+    rules:
+      # OBRIGA doc comment em todo identificador exportado (CODE_DOCS_POLICY.md).
+      - name: exported
+        severity: error
+      # OBRIGA comentário de pacote (doc.go ou topo do arquivo principal).
+      - name: package-comments
+        severity: error
+
+issues:
+  # Os "default excludes" do golangci-lint v1 (EXC0012–EXC0015) silenciam
+  # exatamente os avisos do revive sobre exported/package-comments. Sem
+  # desativá-los, a regra exported acima NUNCA reportaria nada — validado
+  # empiricamente na issue M0-01.
+  exclude-use-default: false
+  exclude-dirs:
+    - tests/load
