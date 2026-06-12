@@ -1,0 +1,279 @@
+# infra/pipeline.yml — CloudFormation do pipeline de deploy (ADR-009).
+#
+# Pipeline: Source (GitHub via CodeConnections, branch main)
+#   → DeployDev (CodeBuild, STAGE=dev, deploy em us-east-1 + smoke test)
+#   → ApprovalProd (aprovação MANUAL no console — gate de produção)
+#   → DeployProd (CodeBuild, STAGE=prod, deploy em sa-east-1 + smoke test)
+#
+# Criado UMA vez, em us-east-1 (o deploy de prod em sa-east-1 acontece por
+# chamadas de API do Serverless Framework — a região do stack da aplicação
+# vem do serverless.yml, não da região do CodeBuild).
+# Comando de criação/atualização: ver docs/runbooks/deploy.md §2.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Pipeline de deploy do ad-serverless (ADR-009): merge na main implanta dev
+  automaticamente; prod exige aprovacao manual. Sem chaves estaticas - service
+  roles + segredos no SSM.
+
+Parameters:
+  GithubConnectionArn:
+    Type: String
+    Description: >-
+      ARN da conexao AWS CodeConnections com o GitHub (registrado em
+      /ad-serverless/pipeline/github-connection-arn - runbook ssm-parametros).
+  RepositorioGitHub:
+    Type: String
+    Default: InteliFi/ad-serverless
+    Description: Repositorio (org/nome) monitorado pelo pipeline.
+  BranchDeDeploy:
+    Type: String
+    Default: main
+    Description: Branch cujo push dispara o pipeline (somente a main).
+
+Resources:
+  # Bucket de artefatos do pipeline (transfere o código entre estágios).
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ad-serverless-pipeline-artifacts-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          # Artefatos de pipeline são descartáveis — 30 dias bastam.
+          - Id: expira-artefatos
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # Role do CodePipeline: orquestra estágios (S3 de artefatos, CodeBuild,
+  # uso da conexão GitHub). Nada além do necessário.
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ad-serverless-pipeline-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codepipeline.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: orquestracao
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: Artefatos
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:GetBucketLocation, s3:ListBucket]
+                Resource:
+                  - !GetAtt ArtifactsBucket.Arn
+                  - !Sub ${ArtifactsBucket.Arn}/*
+              - Sid: Builds
+                Effect: Allow
+                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
+                Resource:
+                  - !GetAtt DeployDevProject.Arn
+                  - !GetAtt DeployProdProject.Arn
+              - Sid: ConexaoGitHub
+                Effect: Allow
+                Action: [codestar-connections:UseConnection, codeconnections:UseConnection]
+                Resource: !Ref GithubConnectionArn
+
+  # Role do CodeBuild: é a credencial EFETIVA do deploy (substitui as roles
+  # OIDC gha-* do runbook oidc-github-aws.md — ADR-009). Escopo por prefixo
+  # ad-serverless-* onde o serviço permite.
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ad-serverless-codebuild-deploy-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: deploy-serverless
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: LogsDoBuild
+                Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/codebuild/ad-serverless-*
+              - Sid: Artefatos
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:GetBucketLocation, s3:ListBucket]
+                Resource:
+                  - !GetAtt ArtifactsBucket.Arn
+                  - !Sub ${ArtifactsBucket.Arn}/*
+              - Sid: StackDaAplicacao
+                Effect: Allow
+                Action: [cloudformation:*]
+                Resource: !Sub arn:aws:cloudformation:*:${AWS::AccountId}:stack/ad-serverless-*/*
+              - Sid: ValidacaoDeTemplate
+                Effect: Allow
+                Action: [cloudformation:ValidateTemplate]
+                Resource: '*'
+              - Sid: DeploymentBucketServerless
+                Effect: Allow
+                Action: [s3:*]
+                Resource:
+                  - arn:aws:s3:::ad-serverless-*
+                  - arn:aws:s3:::ad-serverless-*/*
+              - Sid: FuncoesLambda
+                Effect: Allow
+                Action: [lambda:*]
+                Resource: !Sub arn:aws:lambda:*:${AWS::AccountId}:function:ad-serverless-*
+              - Sid: HttpApi
+                Effect: Allow
+                Action: [apigateway:*]
+                Resource: arn:aws:apigateway:*::/*
+              - Sid: RolesDoStack
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:TagRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PassRole
+                Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/ad-serverless-*
+              - Sid: LogsDasLambdas
+                Effect: Allow
+                Action: [logs:*]
+                Resource: !Sub arn:aws:logs:*:${AWS::AccountId}:log-group:/aws/lambda/ad-serverless-*
+              - Sid: SegredosSSM
+                Effect: Allow
+                Action: [ssm:GetParameter, ssm:GetParameters, ssm:GetParametersByPath]
+                Resource: !Sub arn:aws:ssm:*:${AWS::AccountId}:parameter/ad-serverless/*
+              - Sid: DecriptacaoKMS
+                Effect: Allow
+                Action: [kms:Decrypt]
+                Resource: '*'
+                Condition:
+                  StringEquals: { 'kms:ViaService': !Sub 'ssm.${AWS::Region}.amazonaws.com' }
+              # Recursos do M2 (SQS, CloudFront, eventos, RDS describe).
+              # Deliberadamente amplo até os ARNs reais existirem — restringir
+              # na M2 e atualizar este template + runbook.
+              - Sid: RecursosM2
+                Effect: Allow
+                Action: ['sqs:*', 'events:*', 'cloudfront:*', 'rds:Describe*']
+                Resource: '*'
+
+  # Projeto CodeBuild do deploy DEV (mesmo buildspec; STAGE=dev).
+  DeployDevProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: ad-serverless-deploy-dev
+      Description: Build + serverless deploy --stage dev + smoke test (ADR-009)
+      ServiceRole: !GetAtt BuildRole.Arn
+      TimeoutInMinutes: 20
+      Artifacts: { Type: CODEPIPELINE }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+      Environment:
+        # Imagem arm64 (Graviton): mais barata; o build Go cruza para
+        # arm64 de qualquer host (GOARCH no Makefile).
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux-aarch64-standard:3.0
+        EnvironmentVariables:
+          - { Name: STAGE, Value: dev }
+
+  # Projeto CodeBuild do deploy PROD (STAGE=prod; só roda após aprovação).
+  DeployProdProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: ad-serverless-deploy-prod
+      Description: Build + serverless deploy --stage prod + smoke test (ADR-009)
+      ServiceRole: !GetAtt BuildRole.Arn
+      TimeoutInMinutes: 20
+      Artifacts: { Type: CODEPIPELINE }
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux-aarch64-standard:3.0
+        EnvironmentVariables:
+          - { Name: STAGE, Value: prod }
+
+  # O pipeline em si: push na main → dev automático → aprovação → prod.
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: ad-serverless-deploy
+      RoleArn: !GetAtt PipelineRole.Arn
+      PipelineType: V2
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHub
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: !Ref GithubConnectionArn
+                FullRepositoryId: !Ref RepositorioGitHub
+                BranchName: !Ref BranchDeDeploy
+                # Dispara automaticamente a cada push na branch.
+                DetectChanges: 'true'
+              OutputArtifacts: [{ Name: codigo }]
+        - Name: DeployDev
+          Actions:
+            - Name: BuildDeploySmokeDev
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration: { ProjectName: !Ref DeployDevProject }
+              InputArtifacts: [{ Name: codigo }]
+        - Name: ApprovalProd
+          Actions:
+            # Gate humano: prod NUNCA recebe deploy sem aprovação explícita
+            # no console (paridade com o environment protection planejado
+            # na versão GitHub da issue — ver docs/runbooks/deploy.md §3).
+            - Name: AprovacaoManual
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                CustomData: >-
+                  Aprovar deploy em PRODUCAO (sa-east-1)? Confira o smoke de
+                  dev no estagio anterior e o diff do commit no Source.
+        - Name: DeployProd
+          Actions:
+            - Name: BuildDeploySmokeProd
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration: { ProjectName: !Ref DeployProdProject }
+              InputArtifacts: [{ Name: codigo }]
+
+Outputs:
+  NomeDoPipeline:
+    Description: Nome do pipeline criado
+    Value: !Ref Pipeline
+  ConsoleDoPipeline:
+    Description: URL do console para acompanhar/aprovar
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view
