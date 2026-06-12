@@ -5,7 +5,7 @@ milestone: "M1 — Commons Go"
 ---
 
 > 📌 **Status (2026-06-12):** Implementado — 7 structs + 4 enums com testes.
-> PR #TBD aberto (Closes #55). Nota: CreativeType tem 45 valores no Java
+> PR #124 aberto (Closes #55). Nota: CreativeType tem 45 valores no Java
 > (a spec dizia 46, mas a fonte real é o enum CreativeType.Values).
 
 ## Contexto
