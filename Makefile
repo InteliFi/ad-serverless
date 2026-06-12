@@ -18,13 +18,22 @@
 # (cmd/<nome>/main.go) entra no build automaticamente, sem editar o Makefile.
 SERVICES := $(notdir $(wildcard cmd/*))
 
+# Empacotador de zip da Lambda. Usamos a ferramenta oficial do aws-lambda-go
+# em vez do comando `zip` porque: (1) `zip` não existe no Windows/Git Bash;
+# (2) mesmo quando existe, não grava o bit de execução POSIX do bootstrap
+# dentro do zip — e o runtime provided.al2023 EXIGE bootstrap executável
+# (0755), senão o deploy sobe um artefato inválido. A versão é pinada na
+# mesma do go.mod.
+BUILD_LAMBDA_ZIP := go run github.com/aws/aws-lambda-go/cmd/build-lambda-zip@v1.54.0
+
 .PHONY: build test lint deploy-dev
 
-build: ## Compila todas as Lambdas (1 binário bootstrap por cmd/*)
+build: ## Compila e empacota todas as Lambdas (bootstrap + zip por cmd/*)
 	@for svc in $(SERVICES); do \
 		GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
 		go build -tags lambda.norpc -ldflags="-s -w" \
 		-o bin/$$svc/bootstrap ./cmd/$$svc; \
+		$(BUILD_LAMBDA_ZIP) -o bin/$$svc/$$svc.zip bin/$$svc/bootstrap; \
 	done
 
 test: ## Roda todos os testes com cobertura
