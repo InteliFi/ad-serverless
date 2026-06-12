@@ -1,0 +1,60 @@
+# buildspec.yml — etapa de build/deploy do CodeBuild (ADR-009).
+#
+# O MESMO buildspec serve para dev e prod: o projeto CodeBuild de cada
+# estágio injeta a env var STAGE (dev|prod) — ver infra/pipeline.yml.
+# A região do deploy NÃO vem daqui: o serverless.yml resolve a região pelo
+# stage (dev=us-east-1, prod=sa-east-1 — custom.regions, M0-02).
+#
+# Sequência: instala toolchain pinado → make build (binários arm64 + zips)
+# → serverless deploy → smoke test no endpoint real. Falha em qualquer
+# passo derruba o estágio do pipeline (e o de prod nunca roda sem a
+# aprovação manual — ver infra/pipeline.yml).
+version: 0.2
+
+env:
+  variables:
+    # Sobrescrita por projeto CodeBuild (dev|prod). Default seguro: dev.
+    STAGE: dev
+    # Versão do Go pinada — manter em sincronia com go.mod e ci.yml.
+    GO_VERSION: "1.24.4"
+
+phases:
+  install:
+    runtime-versions:
+      # Node para o Serverless Framework v3 pinado via package-lock (ADR-008).
+      nodejs: 20
+    commands:
+      # Go pinado direto do go.dev — as imagens do CodeBuild nem sempre
+      # trazem a versão exata; instalar garante reprodutibilidade.
+      # uname -m: x86_64 → amd64; aarch64 → arm64 (a imagem do pipeline é arm).
+      - ARCH=$(uname -m); if [ "$ARCH" = "aarch64" ]; then GOARCH_HOST=arm64; else GOARCH_HOST=amd64; fi
+      - curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH_HOST}.tar.gz" -o /tmp/go.tgz
+      - rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
+      - export PATH="/usr/local/go/bin:$PATH"
+      - go version
+      - node --version
+
+  pre_build:
+    commands:
+      # Dependências do Serverless Framework EXATAS do lockfile (ADR-008:
+      # nunca instalar global — npx usa o binário local).
+      - npm ci
+
+  build:
+    commands:
+      - export PATH="/usr/local/go/bin:$PATH"
+      # Compila todos os cmd/* (GOOS=linux GOARCH=arm64, bootstrap + zip).
+      - make build
+      # Deploy do stage injetado pelo pipeline. A credencial é a service
+      # role do CodeBuild — nenhuma chave estática (ADR-009).
+      - npx serverless deploy --stage "$STAGE" --verbose
+      # Smoke test: valida o endpoint REAL recém-deployado. Usa o /hello
+      # enquanto o hello-handler (M0-02) existir.
+      # TODO(M4-03): quando o ad-handler entrar com GET /health, trocar
+      # /hello por /health (mesma validação de "status":"UP").
+      - URL=$(npx serverless info --stage "$STAGE" --verbose | grep -oE 'https://[^ ]+execute-api[^ ]+' | head -1)
+      - echo "Smoke test em ${URL%/}/hello"
+      - curl -fsS --retry 3 --retry-delay 5 "${URL%/}/hello" | grep '"status":"UP"'
+
+# Sem artefatos de saída: o deploy acontece DENTRO do build (o artefato
+# real é o stack CloudFormation atualizado pelo Serverless Framework).
